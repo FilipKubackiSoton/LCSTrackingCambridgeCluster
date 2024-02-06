@@ -2,10 +2,15 @@ from mpi4py import MPI
 import os
 from datetime import datetime
 from itertools import combinations, islice
-import LCS_cython
+#import PW_cython
 import csv
 from typing import List, Dict
-
+import ZScoreHelper as zs
+import ZScorePW as zsp
+import numpy as np
+from collections import defaultdict
+import json  # For saving the counter dictionary to a file easily
+import os
 # Default variable initialization for MPI4PY
 # If you want to learn more, I recommend checking out:
 # https://www.kth.se/blogs/pdc/2019/08/parallel-programming-in-python-mpi4py-part-1/
@@ -13,44 +18,14 @@ from typing import List, Dict
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 nprocs = comm.Get_size()
+status = MPI.Status()   # get MPI status object
+workers_update_filename = "workers_update.json"
 
 
 # ----------------------------------------------------------------------------
 # Below are generic reusable functions supporting the main structure of
 # parallelization on the Cambridge HPC.
 # ----------------------------------------------------------------------------
-
-
-def create_result_directory(name: str, includeTimeStamp: bool = True) -> str:
-    """
-    Create a directory to buffer multiple files storing the results of your
-    calculations. This will be executed on each worker, hence the try-except block 
-    in the implementation.
-
-    Args:
-        name (str): Root name of the directory storing results in the form of multiple files.
-        includeTimeStamp (bool, optional): Include timestamp in directory name.
-        There might be cases where more than one results directory will be created
-        due to delays in starting multiple processes. To prevent overwriting, set
-        includeTimeStamp to False. Defaults to True.
-
-    Returns:
-        str: Name of the directory.
-    """
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M") if includeTimeStamp else ""
-    directory_name = f"{name}_{timestamp}"
-
-    # Due to the distributed nature of the mpi4py execution in slurm,
-    # we wrap the result directory creation in a try-except block.
-    try:
-        os.makedirs(directory_name)
-        print(f"Directory {directory_name} created successfully!")
-    except:
-        print(f"Directory {directory_name} already exists.")
-
-    return directory_name
-
 
 
 def generatorSlice(iterable: combinations, start: int, count: int) -> islice:
@@ -67,7 +42,6 @@ def generatorSlice(iterable: combinations, start: int, count: int) -> islice:
     """
     return islice(iterable, start, start + count, 1)
 
-
 def chunk_combinations(nprocs: int) -> List[islice]:
     """
     Generate a list of chunks of generators. You can think about it as a similar process to batching.
@@ -82,11 +56,14 @@ def chunk_combinations(nprocs: int) -> List[islice]:
     """
     
     # Load the list of indexes (keys) that uniquely identify a record in the input data file.
-    indexes: List[int] = loadIndexes()
+    _, _, sequences = zs.loadDistances()
+    
+    indexes: List[int] = np.arange(len(sequences)) # loadIndexes()
     # Initialize the generator returning 2's combinations of all indexes.
     data_gen: combinations = combinations(indexes, 2)
     # Length of the list of indexes.
     index_len: int = len(indexes) 
+    nn = nprocs - 1
     # we have to manually type the number of our combinations
     # unfortunatelly we cannot just consume the generator and 
     # check to size of the list of all combinations. It will occupy
@@ -104,61 +81,13 @@ def chunk_combinations(nprocs: int) -> List[islice]:
     # We never actually touch our list of combinations as we just modify where the begning 
     # and the end of the generator is. We do it by creating the list of starting points and 
     # number of elements after the starting index to consume.
-    ave, res = divmod(comb_len, nprocs)
-    counts = [int(ave + 1 if p < res else ave) for p in range(nprocs)]
-    starts = [int(sum(counts[:p])) for p in range(nprocs)]
+    ave, res = divmod(comb_len, nn)
+    counts = [int(ave + 1 if p < res else ave) for p in range(nn)]
+    starts = [int(sum(counts[:p])) for p in range(nn)]
 
     # finally we slice the generator according to starting index and size of elements. 
     # We achieve the list of generators that can be freely "send" scatered to multiple workers.
-    return [generatorSlice(data_gen, starts[p], counts[p]) for p in range(nprocs)]
-
-def loadIndexes(fileName: str = "inputData.csv") -> List[int]:
-    """Load list of indexes (keys) that uniqualy point to records in input file.
-
-    Args:
-        fileName (str, optional): Name of the input file. Defaults to "inputData.csv".
-
-    Returns:
-        List[int]: list of indexes
-    """
-    res = []
-    with open(fileName, newline="") as csvfile:
-        spamreader = csv.reader(csvfile, delimiter=" ", quotechar="|")
-        for row in spamreader:
-            res.append(int(row[0].split(",")[0]))
-    return res
-
-def loadIndexDataMap(fileName: str = "inputData.csv") -> Dict[int, str]:
-    """
-    Load a map of indexes pointing to data from a record. !!!YOU MUST MODIFY THIS FUNCTION 
-    ACCORDING TO YOUR NEEDS!!!. In our case, we only needed a string as our data. 
-
-    Args:
-        fileName (str, optional): Name of the input file. Defaults to "inputData.csv".
-
-    Returns:
-        Dict[int, str]: Map of index to data being tested.
-    """
-    
-
-    res = {}
-    with open(fileName, newline="") as csvfile:
-        spamreader = csv.reader(csvfile, delimiter=" ", quotechar="|")
-        for row in spamreader:
-            tmp = row[0].split(",")
-            res[int(tmp[0])] = tmp[1]
-    return res
-
-
-# ----------------------------------------------------------------------------
-# Helper functions specific for the LCS calculations
-# ----------------------------------------------------------------------------
-
-def process_and_encode_string(input_string):
-    transformed = input_string.replace("(", "").replace(")", "") \
-                              .replace("-XXX-", "-").replace("XXX-", "") \
-                              .replace("-XXX", "").split("-")
-    return [s.encode('utf-8') for s in transformed]
+    return [generatorSlice(data_gen, starts[p], counts[p]) for p in range(nn)]
 
 # ----------------------------------------------------------------------------
 # Computations start here!!!
@@ -166,44 +95,111 @@ def process_and_encode_string(input_string):
 # Additionally, we can use rank and nprocs to distinguish between workers.
 # ----------------------------------------------------------------------------
 
+class IncrementalMeanStdWelford:
+    def __init__(self):
+        self.n = 0
+        self.mean = 0
+        self.s = 0
 
-output_dir_name = create_result_directory("results")
+    def add_element(self, x):
+        self.n += 1
+        old_mean = self.mean
+        self.mean += (x - old_mean) / self.n
+        self.s += (x - self.mean) * (x - old_mean)
 
-data_slices = chunk_combinations(nprocs) if rank == 0 else None
+    def get_current_mean(self):
+        return self.mean
 
-# scatter generators accross workers
-data = comm.scatter(data_slices, root=0)
+    def get_current_s(self):
+        return self.s
+
+    def __str__(self):
+        return str(self.n) + "," + str("{:.2f}".format(self.get_current_mean())) + "," + str("{:.2f}".format(self.get_current_s())) + "\n"
+
+def save_to_file(data, filename):
+    """Save the given data to a file in JSON format."""
+    with open(filename, 'w') as f:
+        json.dump(data, f)
+
+
+
+def coordinator_process():
+    results = defaultdict(IncrementalMeanStdWelford)
+    
+    totalcombinations = 0
+    frequecySave = 1000
+    completed_workers = 0
+
+    while completed_workers < nprocs - 1:
+        # Receive data from any worker
+        data = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+        counter[status.Get_source()] +=1
+        if totalcombinations%frequecySave == 0:
+            totalcombinations = 0
+            save_to_file(counter, workers_update_filename)
+            #save(results)
+
+        # Check for a sentinel value indicating a worker has finished sending data
+        if data is None:
+            completed_workers += 1
+            print(completed_workers)
+            continue
+        
+        # Process the data (for example, update statistics)
+        ix, score = data
+        results[ix].add_element(score)
+
+    # After all data is processed, perform further analysis or save the results
+    with open("final_results.csv", "w") as f:
+        for index, values in results.items():
+            f.write(str(index) + "," + str(values))
+
+# Worker process function
+def worker_process(data, rank):
+    
+    distances, ZNF_seq, sequences = zs.loadDistances()
+    new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
+
+    with open(f"output_{rank}.csv", "w") as f:
+        f.write("Index1,Index2,Score")
+        for ix, iy in data:
+            seq1 = sequences[ix]
+            seq2 = sequences[iy]
+            dist1 = distances[ix]
+            dist2 = distances[iy]
+            seq1_conv = zs.convert_sequence(seq1.replace("-", ""), new_blosum_alpha)
+            seq2_conv = zs.convert_sequence(seq2.replace("-", ""), new_blosum_alpha)
+            score = zsp.testCompute(seq1_conv, seq2_conv, dist1, dist2, new_blosum_array)
+            comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
+            comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
+            if score > 7.0:
+                f.write(str(ix) + "," + str(iy) + "," + str("{:.2f}".format(score)) + "\n")
+
+    # Send a sentinel value to indicate completion
+    comm.send(None, dest=0, tag=1)
+
 
 # Example of print that will be saved in log files.
 print(f"rank: {rank}, numprocess: {nprocs}")
 
-# we save results in results directory using independent files for each worker. 
-# It provides distributed output to file hance reducing the risk of collecting results 
-# by the coordinator (worker with rank 0) that might cause out of memory issues.
-output_file_path = os.path.join(output_dir_name, f"output_{rank}.csv")
+data_slices = chunk_combinations(nprocs) if rank == 0 else None
+print(data_slices)
 
-# write headers to output csv file
-# you can freely modify it to your needs
-with open(output_file_path, "w") as f:
-    f.write("1,2,3,4,5,6,7,8\n")
+def load_from_file(filename):
+    """Load data from a JSON file into a dictionary."""
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    return data
 
-# load dictionary pointing from index to data record.
-# Using this map we pass data to our compute funciotn. In our case it's 
-# PW_cython.compare_sequence(). It's cythonized python package that massively 
-# speeds up the computation. We highelly recomend using cython indsted of python 
-# to boost performance. You can also try codon: 
-# https://github.com/exaloop/codon
-# to compile native python to optimised executable
-dataMap = loadIndexDataMap()
+counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(0)
 
-# iterat over combinations of indexed from generator and compute. 
-# In our case we run pair-wise sequence alignment.
-# conditionally safe results to our output file.
-for ix, iy in data:
-    score = LCS_cython.cluster_ZNFs(process_and_encode_string(dataMap[ix]), process_and_encode_string(dataMap[iy]))
-    if score:
-        with open(output_file_path, "a") as f:
-            # Flatten the list, round the elements to two decimal places, and join without spaces
-            score_str = ','.join([f"{round(s, 2):.2f}" for s in score[0]])
-            f.write(f"{ix},{iy},{score_str}\n")
+if rank == 0:
+    for i in range(1, nprocs):
+        comm.send(islice(data_slices[i-1], counter[i], None) , dest=i)
+    coordinator_process()
+else:
+    data = comm.recv(source=0)
+    worker_process(data, rank)
 
+# data = comm.scatter(data_slices, root=0)
+    
