@@ -11,6 +11,7 @@ import numpy as np
 from collections import defaultdict
 import json  # For saving the counter dictionary to a file easily
 import os
+import LCS_cython
 # Default variable initialization for MPI4PY
 # If you want to learn more, I recommend checking out:
 # https://www.kth.se/blogs/pdc/2019/08/parallel-programming-in-python-mpi4py-part-1/
@@ -154,26 +155,39 @@ def coordinator_process():
         for index, values in results.items():
             f.write(str(index) + "," + str(values))
 
+
+
 # Worker process function
 def worker_process(data, rank):
-    
+
+    def process_and_encode_string(input_string):
+        transformed = input_string.replace("(", "").replace(")", "") \
+                                .replace("-XXX-", "-").replace("XXX-", "") \
+                                .replace("-XXX", "").split("-")
+        return [s.encode('utf-8') for s in transformed]
+
     distances, ZNF_seq, sequences = zs.loadDistances()
     new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
 
     with open(f"output_{rank}.csv", "w") as f:
-        f.write("Index1,Index2,Score")
+        f.write("1,2,3,4,5,6,7,8\n")
+        # f.write("Index1,Index2,Score")
         for ix, iy in data:
             seq1 = sequences[ix]
             seq2 = sequences[iy]
-            dist1 = distances[ix]
-            dist2 = distances[iy]
-            seq1_conv = zs.convert_sequence(seq1.replace("-", ""), new_blosum_alpha)
-            seq2_conv = zs.convert_sequence(seq2.replace("-", ""), new_blosum_alpha)
-            score = zsp.testCompute(seq1_conv, seq2_conv, dist1, dist2, new_blosum_array)
+            # dist1 = distances[ix]
+            # dist2 = distances[iy]
+            # seq1_conv = zs.convert_sequence(seq1.replace("-", ""), new_blosum_alpha)
+            # seq2_conv = zs.convert_sequence(seq2.replace("-", ""), new_blosum_alpha)
+            # score = zsp.testCompute(seq1_conv, seq2_conv, dist1, dist2, new_blosum_array)
+
+            score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
+
             comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
             comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
-            if score > 7.0:
-                f.write(str(ix) + "," + str(iy) + "," + str("{:.2f}".format(score)) + "\n")
+            if score:
+                f.write(','.join([f"{round(s, 2):.2f}" for s in score[0]]))
+                #f.write(str(ix) + "," + str(iy) + "," + str("{:.2f}".format(score)) + "\n")
 
     # Send a sentinel value to indicate completion
     comm.send(None, dest=0, tag=1)
