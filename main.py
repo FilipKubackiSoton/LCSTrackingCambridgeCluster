@@ -41,6 +41,22 @@ def generatorSlice(iterable: combinations, start: int, count: int) -> islice:
     """
     return islice(iterable, start, start + count, 1)
 
+def loadIndexes(fileName: str = "inputData.csv") -> List[int]:
+    """Load list of indexes (keys) that uniqualy point to records in input file.
+
+    Args:
+        fileName (str, optional): Name of the input file. Defaults to "inputData.csv".
+
+    Returns:
+        List[int]: list of indexes
+    """
+    res = []
+    with open(fileName, newline="") as csvfile:
+        spamreader = csv.reader(csvfile, delimiter=" ", quotechar="|")
+        for row in spamreader:
+            res.append(int(row[0].split(",")[0]))
+    return res
+
 def chunk_combinations(nprocs: int) -> List[islice]:
     """
     Generate a list of chunks of generators. You can think about it as a similar process to batching.
@@ -55,9 +71,8 @@ def chunk_combinations(nprocs: int) -> List[islice]:
     """
     
     # Load the list of indexes (keys) that uniquely identify a record in the input data file.
-    _, _, sequences = zs.loadDistances()
-    
-    indexes: List[int] = np.arange(len(sequences)) # loadIndexes()
+        
+    indexes: List[int] = loadIndexes() # loadIndexes()
     # Initialize the generator returning 2's combinations of all indexes.
     data_gen: combinations = combinations(indexes, 2)
     # Length of the list of indexes.
@@ -127,6 +142,7 @@ def coordinator_process():
     
     totalcombinations = 0
     frequecySave = 1000
+    substepSaves = 0
     completed_workers = 0
 
     while completed_workers < nprocs - 1:
@@ -135,8 +151,10 @@ def coordinator_process():
         counter[status.Get_source()] +=1
         totalcombinations += 1
         if totalcombinations%frequecySave == 0:
+            substepSaves += 1
             totalcombinations = 0
             save_to_file(counter, workers_update_filename)
+            print(f"Finished: {substepSaves*frequecySave} / {123}")
             #save(results)
 
         # Check for a sentinel value indicating a worker has finished sending data
