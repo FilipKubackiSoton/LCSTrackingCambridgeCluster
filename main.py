@@ -57,6 +57,27 @@ def loadIndexes(fileName: str = "inputData.csv") -> List[int]:
             res.append(int(row[0].split(",")[0]))
     return res
 
+def loadIndexDataMap(fileName: str = "inputData.csv") -> Dict[int, str]:
+    """
+    Load a map of indexes pointing to data from a record. !!!YOU MUST MODIFY THIS FUNCTION 
+    ACCORDING TO YOUR NEEDS!!!. In our case, we only needed a string as our data. 
+
+    Args:
+        fileName (str, optional): Name of the input file. Defaults to "inputData.csv".
+
+    Returns:
+        Dict[int, str]: Map of index to data being tested.
+    """
+    
+
+    res = {}
+    with open(fileName, newline="") as csvfile:
+        spamreader = csv.reader(csvfile, delimiter=" ", quotechar="|")
+        for row in spamreader:
+            tmp = row[0].split(",")
+            res[int(tmp[0])] = tmp[1]
+    return res
+
 def chunk_combinations(nprocs: int) -> List[islice]:
     """
     Generate a list of chunks of generators. You can think about it as a similar process to batching.
@@ -135,8 +156,6 @@ def save_to_file(data, filename):
     with open(filename, 'w') as f:
         json.dump(data, f)
 
-
-
 def coordinator_process():
     results = defaultdict(IncrementalMeanStdWelford)
     
@@ -154,8 +173,9 @@ def coordinator_process():
             substepSaves += 1
             totalcombinations = 0
             save_to_file(counter, workers_update_filename)
-            print(f"Finished: {substepSaves*frequecySave} / {123}")
-            #save(results)
+            index_len = len(loadIndexes())
+            comb_len: int = index_len * (index_len - 1) / 2
+            print(f"Finished: {substepSaves*frequecySave/(comb_len/100)} %")
 
         # Check for a sentinel value indicating a worker has finished sending data
         if data is None:
@@ -164,7 +184,7 @@ def coordinator_process():
             continue
         
         # Process the data (for example, update statistics)
-        ix, score = data
+        # ix, score = data
         ##############################################################
         # keep in mind that the score should ne just a single number
         # consider adding the extra functionality to covert more values from
@@ -181,6 +201,7 @@ def coordinator_process():
 
 # Worker process function
 def worker_process(data, rank):
+    dataMap = loadIndexDataMap()
 
     def process_and_encode_string(input_string):
         transformed = input_string.replace("(", "").replace(")", "") \
@@ -188,15 +209,15 @@ def worker_process(data, rank):
                                 .replace("-XXX", "").split("-")
         return [s.encode('utf-8') for s in transformed]
 
-    distances, ZNF_seq, sequences = zs.loadDistances()
-    new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
+    # distances, ZNF_seq, sequences = zs.loadDistances()
+    # new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
 
     with open(f"output_{rank}.csv", "w") as f:
         f.write("1,2,3,4,5,6,7,8\n")
         # f.write("Index1,Index2,Score")
         for ix, iy in data:
-            seq1 = sequences[ix]
-            seq2 = sequences[iy]
+            seq1 = dataMap[ix]
+            seq2 = dataMap[iy]
             # dist1 = distances[ix]
             # dist2 = distances[iy]
             # seq1_conv = zs.convert_sequence(seq1.replace("-", ""), new_blosum_alpha)
