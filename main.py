@@ -148,12 +148,17 @@ def coordinator_process():
         
         # Process the data (for example, update statistics)
         ix, score = data
-        results[ix].add_element(score)
+        ##############################################################
+        # keep in mind that the score should ne just a single number
+        # consider adding the extra functionality to covert more values from
+        # score to single number
+        ##############################################################
+        #results[ix].add_element(score[2]) 
 
-    # After all data is processed, perform further analysis or save the results
-    with open("final_results.csv", "w") as f:
-        for index, values in results.items():
-            f.write(str(index) + "," + str(values))
+    # # After all data is processed, perform further analysis or save the results
+    # with open("final_results.csv", "w") as f:
+    #     for index, values in results.items():
+    #         f.write(str(index) + "," + str(values))
 
 
 
