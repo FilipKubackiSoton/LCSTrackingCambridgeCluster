@@ -133,6 +133,7 @@ def coordinator_process():
         # Receive data from any worker
         data = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
         counter[status.Get_source()] +=1
+        totalcombinations += 1
         if totalcombinations%frequecySave == 0:
             totalcombinations = 0
             save_to_file(counter, workers_update_filename)
