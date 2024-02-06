@@ -1,0 +1,38 @@
+For local testing in python virtual environment of mpi4py run the following commands: 
+
+// create a new loval virtual environment
+python3 -m venv ./venv
+
+// activate the virtual environment
+source venv/bin/activate
+
+// upgrade pip 
+pip3 install --upgrade pip
+
+// upgrade apt
+sudo apt update
+
+// install pip req. files for mpi4py
+sudo apt-get install libopenmpi-dev
+
+// install mpi4py - python library which will parallelize processes on the cluster
+pip install mpi4py
+
+// up to this point you should have working environment ready to test locally your mpi4py script
+// [KEEP IN MIND] to run the mpi4py script locally, you must execute:
+mpirun -np 2 python3 YOURSCRIPT.py
+// [REMEMBER] because of the extended cmd execution command line arguments have different indexation.
+// [REMEMBER] np args defines the number of parallel tasks
+
+
+// SAVING RESULTS
+My advice is to transfer logic of writing to file out of the MPI4PY. You can execute append to file
+from the position of your script. For python it would be: 
+
+with open('results.csv', 'a') as f:
+    f.write('{},{},{}\n'.format(index1, index2, result))
+
+
+In this way you will have single csv file just executing scripts in parallel.
+
+
