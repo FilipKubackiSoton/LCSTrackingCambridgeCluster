@@ -62,7 +62,7 @@ pip install cython
 python setup.py build_ext --inplace
 
 #! Full path to application executable: 
-application="python /home/jj515/Independent-Parallel-Calculations-Deployment-Cambridge-Cluster/main.py"
+application="python /home/jj515/LCSTrackingCambridgeCluster/main.py"
 
 #! Run options for the application:
 options=""
