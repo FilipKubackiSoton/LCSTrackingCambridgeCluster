@@ -5,8 +5,6 @@ from itertools import combinations, islice
 #import PW_cython
 import csv
 from typing import List, Dict
-import ZScoreHelper as zs
-import ZScorePW as zsp
 import numpy as np
 from collections import defaultdict
 import json  # For saving the counter dictionary to a file easily
