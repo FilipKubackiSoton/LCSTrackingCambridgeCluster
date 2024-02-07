@@ -167,15 +167,15 @@ def coordinator_process():
     while completed_workers < nprocs - 1:
         # Receive data from any worker
         data = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-        counter[status.Get_source()] +=1
-        totalcombinations += 1
-        if totalcombinations%frequecySave == 0:
-            substepSaves += 1
-            totalcombinations = 0
-            save_to_file(counter, workers_update_filename)
-            index_len = len(loadIndexes())
-            comb_len: int = index_len * (index_len - 1) / 2
-            print(f"Finished: {substepSaves*frequecySave/comb_len*100} %")
+        # counter[status.Get_source()] +=1
+        # totalcombinations += 1
+        # if totalcombinations%frequecySave == 0:
+        #     substepSaves += 1
+        #     totalcombinations = 0
+        #     save_to_file(counter, workers_update_filename)
+        #     index_len = len(loadIndexes())
+        #     comb_len: int = index_len * (index_len - 1) / 2
+        #     print(f"Finished: {substepSaves*frequecySave/comb_len*100} %")
 
         # Check for a sentinel value indicating a worker has finished sending data
         if data is None:
@@ -198,42 +198,37 @@ def coordinator_process():
     #         f.write(str(index) + "," + str(values))
 
 
+def process_and_encode_string(input_string):
+    transformed = input_string.replace("(", "").replace(")", "") \
+                            .replace("-XXX-", "-").replace("XXX-", "") \
+                            .replace("-XXX", "").split("-")
+    return [s.encode('utf-8') for s in transformed]
 
 # Worker process function
 def worker_process(data, rank: int, processed_samples_num: int) -> None:
 
     dataMap = loadIndexDataMap()
-
-    def process_and_encode_string(input_string):
-        transformed = input_string.replace("(", "").replace(")", "") \
-                                .replace("-XXX-", "-").replace("XXX-", "") \
-                                .replace("-XXX", "").split("-")
-        return [s.encode('utf-8') for s in transformed]
-
-    # distances, ZNF_seq, sequences = zs.loadDistances()
-    # new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
-
-    counter = processed_samples_num
-
-    with open(f"output/output_{rank}.csv", "a") as f:
-        
-        f.write("1,2,3,4,5,6,7,8\n")
-        counter+=1
-
-        with open(f"output/progress_{rank}.txt", "w") as p:
-            p.write(str(counter))
-
-        # f.write("Index1,Index2,Score")
-        for ix, iy in islice(data, processed_samples_num, None) :
+    progress_counter = processed_samples_num
+    try: 
+        for ix, iy in islice(data, processed_samples_num, None)  :
+            progress_counter += 1
+            progress_path = f"output/progress_{rank}.txt"
+            with open(progress_path, "w") as p:
+                p.write(str(progress_counter))
             seq1 = dataMap[ix]
             seq2 = dataMap[iy]
-
             score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
-
             comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
             comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
             if score:
-                f.write(','.join([f"{round(s, 2):.2f}" for s in score[0]]))
+                print(score)
+                with open(f"output/output_{rank}.csv", "a") as f:
+                    score_str = ','.join([f"{round(s, 2):.2f}" for s in score[0]])
+                    f.write(f"{ix},{iy},{score_str}\n")
+                #f.write(','.join([f"{round(s, 2):.2f}" for s in score[0]]))
+    
+    except Exception as e:
+        print(f"Error writing to file: {e}")             
 
     # Send a sentinel value to indicate completion
     comm.send(None, dest=0, tag=1)
@@ -255,19 +250,26 @@ counter = load_from_file(workers_update_filename) if os.path.exists(workers_upda
 
 if rank == 0:
     for i in range(1, nprocs):
-        comm.send(islice(data_slices[i-1], counter[i], None) , dest=i)
+        file_path = f"output/output_{i}.csv"
+        if(not os.path.exists(file_path)):
+            print(f"Creating output dir: {i}")
+            with open(file_path, "w") as f:
+                f.write("SourceIndex,OutputIndex,1,2,3,4,5,6,7,8\n")
+        comm.send(data_slices[i-1], dest=i)
     coordinator_process()
 else:
     counter = 0
     progress_path = f"output/progress_{rank}.txt"
-    if(os.path.exists(progress_path)):
-        counter = 0
-    else:
-        # Reading and parsing back to int
-        with open(f"output/progress_{rank}.txt", "r") as p:
-            saved_counter = p.read().strip()  # Read the counter value and strip any whitespace
-            counter = int(saved_counter)  # Convert the string back to an integer
+    try:
+        with open(progress_path, "r") as p:
+            saved_counter = p.read().strip()  # Read and strip whitespace
+            counter = int(saved_counter)  # Attempt conversion
+    except Exception:
+        print(f"NO progress for rank: {rank}")
+        # Handle the case where conversion fails
+        counter = 0  # Or another appropriate default value
 
+    print(f"Worker: {rank} - counter: {counter}")
     data = comm.recv(source=0)
     worker_process(data, rank, counter)
 

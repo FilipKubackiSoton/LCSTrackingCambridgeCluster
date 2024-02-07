@@ -4,14 +4,14 @@ import numpy as np
 
 extensions = [
     Extension(
-        "PW_cython",
-        ["PW_cython.pyx"],
+        "LCS_cython",
+        ["LCS_cython.pyx"],
         language="c++",  # Specify the use of C++
         include_dirs=[np.get_include()],
     ),
 ]
 
 setup(
-    name='PW_cython',
+    name='LCS_cython',
     ext_modules=cythonize(extensions),
 )
