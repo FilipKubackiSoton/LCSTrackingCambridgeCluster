@@ -175,7 +175,7 @@ def coordinator_process():
             save_to_file(counter, workers_update_filename)
             index_len = len(loadIndexes())
             comb_len: int = index_len * (index_len - 1) / 2
-            print(f"Finished: {substepSaves*frequecySave/(comb_len/100)} %")
+            print(f"Finished: {substepSaves*frequecySave/comb_len*100} %")
 
         # Check for a sentinel value indicating a worker has finished sending data
         if data is None:
@@ -200,7 +200,8 @@ def coordinator_process():
 
 
 # Worker process function
-def worker_process(data, rank):
+def worker_process(data, rank: int, processed_samples_num: int) -> None:
+
     dataMap = loadIndexDataMap()
 
     def process_and_encode_string(input_string):
@@ -212,17 +213,20 @@ def worker_process(data, rank):
     # distances, ZNF_seq, sequences = zs.loadDistances()
     # new_blosum62_tuple, (df_new_blosum62, new_blosum_alpha, new_blosum_array) = zs.getMatrixPipeline()
 
-    with open(f"output_{rank}.csv", "w") as f:
+    counter = processed_samples_num
+
+    with open(f"output/output_{rank}.csv", "a") as f:
+        
         f.write("1,2,3,4,5,6,7,8\n")
+        counter+=1
+
+        with open(f"output/progress_{rank}.txt", "w") as p:
+            p.write(str(counter))
+
         # f.write("Index1,Index2,Score")
-        for ix, iy in data:
+        for ix, iy in islice(data, processed_samples_num, None) :
             seq1 = dataMap[ix]
             seq2 = dataMap[iy]
-            # dist1 = distances[ix]
-            # dist2 = distances[iy]
-            # seq1_conv = zs.convert_sequence(seq1.replace("-", ""), new_blosum_alpha)
-            # seq2_conv = zs.convert_sequence(seq2.replace("-", ""), new_blosum_alpha)
-            # score = zsp.testCompute(seq1_conv, seq2_conv, dist1, dist2, new_blosum_array)
 
             score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
 
@@ -230,7 +234,6 @@ def worker_process(data, rank):
             comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
             if score:
                 f.write(','.join([f"{round(s, 2):.2f}" for s in score[0]]))
-                #f.write(str(ix) + "," + str(iy) + "," + str("{:.2f}".format(score)) + "\n")
 
     # Send a sentinel value to indicate completion
     comm.send(None, dest=0, tag=1)
@@ -248,15 +251,25 @@ def load_from_file(filename):
         data = json.load(f)
     return data
 
-counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(0)
+counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(lambda : 0)
 
 if rank == 0:
     for i in range(1, nprocs):
         comm.send(islice(data_slices[i-1], counter[i], None) , dest=i)
     coordinator_process()
 else:
+    counter = 0
+    progress_path = f"output/progress_{rank}.txt"
+    if(os.path.exists(progress_path)):
+        counter = 0
+    else:
+        # Reading and parsing back to int
+        with open(f"output/progress_{rank}.txt", "r") as p:
+            saved_counter = p.read().strip()  # Read the counter value and strip any whitespace
+            counter = int(saved_counter)  # Convert the string back to an integer
+
     data = comm.recv(source=0)
-    worker_process(data, rank)
+    worker_process(data, rank, counter)
 
 # data = comm.scatter(data_slices, root=0)
     
