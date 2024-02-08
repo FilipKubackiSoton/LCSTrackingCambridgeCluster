@@ -292,7 +292,7 @@ def cluster_ZNFs(const vector[string] &ZNF1, const vector[string] &ZNF2):
 @cython.wraparound(False)
 @cython.cdivision(True)
 cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vector[string] &ZNF2,
-                              float ZNF1_len, float ZNF2_len, vector[vector[float]] &results,
+                              float ZNF1_len, float ZNF2_len,
                               const map[pair[char, char], float] &blosum, const map[pair[char, char], float] &identity,
                               const map[pair[char, char], float] &blosum_mismatch, const map[pair[char, char], float] &identity_mismatch,
                               openmp.omp_lock_t &mylock) nogil:
@@ -345,7 +345,6 @@ cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vect
         #    print(lcs_results)
 
         openmp.omp_set_lock(&mylock)
-        results.push_back(temp_results)
         with gil:
             file_path = f"output/output_{rank}.csv"
             with open(file_path, 'a', newline='') as f:
@@ -473,7 +472,6 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
     indexesTuple = convert_list_of_tuples_to_cpp_vector(tuples_list)
     openmp.omp_init_lock(&mylock)
     print(f"Number of num_tuples: {num_tuples}")
-    cdef vector[vector[float]] results
     with nogil, parallel():
         for index in prange(num_tuples, schedule="dynamic"):
             # i, j = tuples_list[index]  # This line is not valid Cython syntax because you cannot directly assign to i, j in nogil
@@ -484,6 +482,6 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
             ZNF2 = dataMap[j]
             ZNF1_len = ZNF1.size()
             ZNF2_len = ZNF2.size()
-            calculate_lcs_ratio(rank_, i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, results, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+            calculate_lcs_ratio(rank_, i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
     openmp.omp_destroy_lock(&mylock)
-    return results
+    

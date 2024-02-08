@@ -209,7 +209,7 @@ def worker_process(data, rank: int, processed_samples_num: int) -> None:
         datagen = islice(data, processed_samples_num, None)
 
 
-        results = LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean, rank)
+        LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean, rank)
         # file_path = f"output/output_{rank}.csv"
         # # Writing to the CSV file
         # with open(file_path, 'a', newline='') as csvfile:
