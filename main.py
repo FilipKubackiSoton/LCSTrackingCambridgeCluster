@@ -200,16 +200,39 @@ def process_and_encode_string(input_string):
                             .replace("-XXX", "").split("-")
     return [s.encode('utf-8') for s in transformed]
 
+def equally_spread_partitions(totalSize, n):
+    """
+    Create an array of n+1 numbers from 0 to totalSize that are equally spread as possible.
+
+    Parameters:
+    - totalSize: The total size or the upper boundary of the range to partition.
+    - n: The number of partitions.
+
+    Returns:
+    - A list of partition boundaries, including 0 and totalSize.
+    """
+    partition_size = totalSize / n
+    return [int(round(partition_size * i)) for i in range(n + 1)]
+
 # Worker process function
 def worker_process(data, rank: int, processed_samples_num: int) -> None:
 
     dataMap = loadIndexDataMap()
+    dataMapLen = len(dataMap.keys())
+    totalSize = dataMapLen*(dataMapLen-1)/ 2 / 3
     dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
+    #datagen = islice(data, processed_samples_num, None)
+    n_partitions = 1000000
+    partitions = equally_spread_partitions(totalSize, n_partitions)
+    print(rank)
+    #print(partitions)
     try: 
-        datagen = islice(data, processed_samples_num, None)
+        #LCS_cython.cluster_ZNFs_test(list(data), dataMapClean, rank)
 
+        for i in range(n_partitions):
+            #print(str(partitions[i]) +"-"+ str(partitions[i+1]))
+            LCS_cython.cluster_ZNFs_test(list(islice(data, partitions[i], partitions[i+1])), dataMapClean, rank)
 
-        LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean, rank)
         # file_path = f"output/output_{rank}.csv"
         # # Writing to the CSV file
         # with open(file_path, 'a', newline='') as csvfile:

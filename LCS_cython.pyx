@@ -352,7 +352,6 @@ cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vect
                 f.write("\n")
         openmp.omp_unset_lock(&mylock)
 
-
 """
 from threading import Lock
 @cython.boundscheck(False)
@@ -441,8 +440,7 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
     # Convert generator to a list of tuples for processing
     tuples_list = generator # list(generator)
     tuples_length = len(tuples_list)
-    numpy_array_of_tuples = np.array(tuples_list, dtype=np.int32)
-    tuples_array = np.array(list(generator), dtype=np.int32)
+    tuples_array = np.array(generator, dtype=np.int32)
 
     cdef map[pair[char, char], float] blosum
     cdef map[pair[char, char], float] identity
@@ -471,7 +469,7 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
     dataMap = convert_to_cpp_vector(dataMapDict)
     indexesTuple = convert_list_of_tuples_to_cpp_vector(tuples_list)
     openmp.omp_init_lock(&mylock)
-    print(f"Number of num_tuples: {num_tuples}")
+    print(f"Rank: {rank} - Number of num_tuples: {num_tuples}")
     with nogil, parallel():
         for index in prange(num_tuples, schedule="dynamic"):
             # i, j = tuples_list[index]  # This line is not valid Cython syntax because you cannot directly assign to i, j in nogil
