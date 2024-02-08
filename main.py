@@ -208,16 +208,17 @@ def worker_process(data, rank: int, processed_samples_num: int) -> None:
     try: 
         datagen = islice(data, processed_samples_num, None)
 
-        results = LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean)
-        file_path = f"output/output_{rank}.csv"
-        # Writing to the CSV file
-        with open(file_path, 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
+
+        results = LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean, rank)
+        # file_path = f"output/output_{rank}.csv"
+        # # Writing to the CSV file
+        # with open(file_path, 'a', newline='') as csvfile:
+        #     writer = csv.writer(csvfile)
             
-            # Writing each list (row) into the CSV file
-            for row in results:     
-                # score_str = ','.join([f"{round(s, 2):.2f}" for s in row])
-                writer.writerow(row)
+        #     # Writing each list (row) into the CSV file
+        #     for row in results:     
+        #         # score_str = ','.join([f"{round(s, 2):.2f}" for s in row])
+        #         writer.writerow(row)
         # for ix, iy in islice(data, processed_samples_num, None)  :
         #     progress_counter += 1
         #     progress_path = f"output/progress_{rank}.txt"

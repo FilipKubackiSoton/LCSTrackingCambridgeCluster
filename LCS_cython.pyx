@@ -19,7 +19,7 @@ cdef inline int int_max(int a, int b): return a if a >= b else b
 #from Bio.SubsMat.MatrixInfo import blosum62, ident
 blosum62 = substitution_matrices.load("BLOSUM62")
 ident = blosum62
-
+rank = 0
 cimport openmp
 
 def sanitize_matrix(original_matrix):
@@ -291,7 +291,7 @@ def cluster_ZNFs(const vector[string] &ZNF1, const vector[string] &ZNF2):
 @cython.nonecheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cdef void calculate_lcs_ratio(int i, int j, vector[string] &ZNF1, vector[string] &ZNF2,
+cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vector[string] &ZNF2,
                               float ZNF1_len, float ZNF2_len, vector[vector[float]] &results,
                               const map[pair[char, char], float] &blosum, const map[pair[char, char], float] &identity,
                               const map[pair[char, char], float] &blosum_mismatch, const map[pair[char, char], float] &identity_mismatch,
@@ -346,6 +346,11 @@ cdef void calculate_lcs_ratio(int i, int j, vector[string] &ZNF1, vector[string]
 
         openmp.omp_set_lock(&mylock)
         results.push_back(temp_results)
+        with gil:
+            file_path = f"output/output_{rank}.csv"
+            with open(file_path, 'a', newline='') as f:
+                f.write(",".join([str(x) for x in temp_results]))
+                f.write("\n")
         openmp.omp_unset_lock(&mylock)
 
 
@@ -431,8 +436,7 @@ from threading import Lock
 @cython.nonecheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def cluster_ZNFs_test(generator, dataMapDict):
-    
+def cluster_ZNFs_test(generator, dataMapDict, rank):
     # Assuming `generator` is a Python generator that yields tuples of ints (i, j)
     
     # Convert generator to a list of tuples for processing
@@ -452,6 +456,7 @@ def cluster_ZNFs_test(generator, dataMapDict):
     identity_mismatch = sanitize_matrix2(ident, equal=True)
     
     cdef int i, j
+    cdef int rank_ = rank
     cdef vector[string] ZNF1
     cdef vector[string] ZNF2
     cdef float ZNF1_len
@@ -479,6 +484,6 @@ def cluster_ZNFs_test(generator, dataMapDict):
             ZNF2 = dataMap[j]
             ZNF1_len = ZNF1.size()
             ZNF2_len = ZNF2.size()
-            calculate_lcs_ratio(i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, results, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+            calculate_lcs_ratio(rank_, i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, results, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
     openmp.omp_destroy_lock(&mylock)
     return results
