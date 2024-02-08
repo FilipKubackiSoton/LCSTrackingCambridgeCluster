@@ -157,16 +157,12 @@ def save_to_file(data, filename):
         json.dump(data, f)
 
 def coordinator_process():
-    results = defaultdict(IncrementalMeanStdWelford)
-    
-    totalcombinations = 0
-    frequecySave = 1000
-    substepSaves = 0
     completed_workers = 0
 
     while completed_workers < nprocs - 1:
         # Receive data from any worker
         data = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+
         # counter[status.Get_source()] +=1
         # totalcombinations += 1
         # if totalcombinations%frequecySave == 0:
@@ -180,7 +176,7 @@ def coordinator_process():
         # Check for a sentinel value indicating a worker has finished sending data
         if data is None:
             completed_workers += 1
-            print(completed_workers)
+            print(f"Compted worker rank: {completed_workers}")
             continue
         
         # Process the data (for example, update statistics)
@@ -208,24 +204,35 @@ def process_and_encode_string(input_string):
 def worker_process(data, rank: int, processed_samples_num: int) -> None:
 
     dataMap = loadIndexDataMap()
-    progress_counter = processed_samples_num
+    dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
     try: 
-        for ix, iy in islice(data, processed_samples_num, None)  :
-            progress_counter += 1
-            progress_path = f"output/progress_{rank}.txt"
-            with open(progress_path, "w") as p:
-                p.write(str(progress_counter))
-            seq1 = dataMap[ix]
-            seq2 = dataMap[iy]
-            score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
-            comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
-            comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
-            if score:
-                print(score)
-                with open(f"output/output_{rank}.csv", "a") as f:
-                    score_str = ','.join([f"{round(s, 2):.2f}" for s in score[0]])
-                    f.write(f"{ix},{iy},{score_str}\n")
-                #f.write(','.join([f"{round(s, 2):.2f}" for s in score[0]]))
+        datagen = islice(data, processed_samples_num, None)
+
+        results = LCS_cython.cluster_ZNFs_test(list(datagen), dataMapClean)
+        file_path = f"output/output_{rank}.csv"
+        # Writing to the CSV file
+        with open(file_path, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Writing each list (row) into the CSV file
+            for row in results:     
+                # score_str = ','.join([f"{round(s, 2):.2f}" for s in row])
+                writer.writerow(row)
+        # for ix, iy in islice(data, processed_samples_num, None)  :
+        #     progress_counter += 1
+        #     progress_path = f"output/progress_{rank}.txt"
+        #     with open(progress_path, "w") as p:
+        #         p.write(str(progress_counter))
+        #     seq1 = dataMap[ix]
+        #     seq2 = dataMap[iy]
+        #     score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
+        #     comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
+        #     comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
+        #     if score:
+        #         print(score)
+        #         with open(f"output/output_{rank}.csv", "a") as f:
+        #             score_str = ','.join([f"{round(s, 2):.2f}" for s in score[0]])
+        #             f.write(f"{ix},{iy},{score_str}\n")
     
     except Exception as e:
         print(f"Error writing to file: {e}")             
