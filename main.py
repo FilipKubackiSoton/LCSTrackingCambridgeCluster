@@ -214,24 +214,52 @@ def equally_spread_partitions(totalSize, n):
     partition_size = totalSize / n
     return [int(round(partition_size * i)) for i in range(n + 1)]
 
-# Worker process function
-def worker_process(data, rank: int, processed_samples_num: int) -> None:
 
+    worker_process(paritions[rank-1], paritions[rank], rank, counter)
+# Worker process function
+def worker_process(partitionStart: int, partitionEnd: int, rank: int) -> None:
+    
     dataMap = loadIndexDataMap()
     dataMapLen = len(dataMap.keys())
+    dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
+    sizePartition = partitionEnd - partitionStart
+    print(f"Datamap len: {dataMapLen}")
+    progressFlags = getCombinationsSparseRanges(sizePartition, 10)
+    #LCS_cython.cluster_ZNFs_test(list(islice(data, 0, 100000)), dataMapClean, rank)
+    i = 0 
+    for indexIn in range(partitionStart, partitionEnd, 1):
+        LCS_cython.cluster_ZNFs_parition(indexIn, dataMapLen, dataMapClean, rank)      
+        if((progressFlags[i] + partitionStart)==indexIn):
+            print(f"rank: {rank} - parition completed ration: {i} out of 10")
+            i += 1
+        
+    # Send a sentinel value to indicate completion
+    comm.send(None, dest=0, tag=1)
+
+
+# Worker process function
+    """
+def worker_process(data, rank: int, processed_samples_num: int) -> None:
+    print("start process")
+    dataMap = loadIndexDataMap()
+    print("datamap")
+    dataMapLen = len(dataMap.keys())
+    print(f"dataMap length: {dataMapLen}")
     totalSize = dataMapLen*(dataMapLen-1)/ 2 / 3
     dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
+    print("dataMapClean")
     #datagen = islice(data, processed_samples_num, None)
     n_partitions = 1000000
     partitions = equally_spread_partitions(totalSize, n_partitions)
     print(rank)
     #print(partitions)
     try: 
-        #LCS_cython.cluster_ZNFs_test(list(data), dataMapClean, rank)
 
-        for i in range(n_partitions):
-            #print(str(partitions[i]) +"-"+ str(partitions[i+1]))
-            LCS_cython.cluster_ZNFs_test(list(islice(data, partitions[i], partitions[i+1])), dataMapClean, rank)
+        LCS_cython.cluster_ZNFs_test(list(islice(data, 0, 100000)), dataMapClean, rank)
+        
+        # for i in range(n_partitions):
+        #     #print(str(partitions[i]) +"-"+ str(partitions[i+1]))
+        #     LCS_cython.cluster_ZNFs_test(list(islice(data, partitions[i], partitions[i+1])), dataMapClean, rank)
 
         # file_path = f"output/output_{rank}.csv"
         # # Writing to the CSV file
@@ -265,6 +293,8 @@ def worker_process(data, rank: int, processed_samples_num: int) -> None:
     comm.send(None, dest=0, tag=1)
 
 
+        """
+
 # Example of print that will be saved in log files.
 print(f"rank: {rank}, numprocess: {nprocs}")
 
@@ -277,8 +307,16 @@ def load_from_file(filename):
         data = json.load(f)
     return data
 
+def getCombinationsSparseRanges(n: int, p: int):
+    chunksize = n//p
+    res = [chunksize*i for i in range(p)]
+    res.append(n)
+    return res
+
 counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(lambda : 0)
 
+paritions = getCombinationsSparseRanges(len(loadIndexDataMap().keys()),  nprocs-1)
+print(paritions)
 if rank == 0:
     for i in range(1, nprocs):
         file_path = f"output/output_{i}.csv"
@@ -302,7 +340,9 @@ else:
 
     print(f"Worker: {rank} - counter: {counter}")
     data = comm.recv(source=0)
-    worker_process(data, rank, counter)
+    worker_process(paritions[rank-1], paritions[rank], rank)
+
+    # worker_process(data, rank, counter)
 
 # data = comm.scatter(data_slices, root=0)
     

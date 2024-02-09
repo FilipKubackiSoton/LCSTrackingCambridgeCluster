@@ -291,7 +291,7 @@ def cluster_ZNFs(const vector[string] &ZNF1, const vector[string] &ZNF2):
 @cython.nonecheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vector[string] &ZNF2,
+cdef void calculate_lcs_ratio(int rank, int counter, int i, int j, vector[string] &ZNF1, vector[string] &ZNF2,
                               float ZNF1_len, float ZNF2_len,
                               const map[pair[char, char], float] &blosum, const map[pair[char, char], float] &identity,
                               const map[pair[char, char], float] &blosum_mismatch, const map[pair[char, char], float] &identity_mismatch,
@@ -302,6 +302,7 @@ cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vect
     cdef float min_ratio_blosum_mismatch, min_ratio_gap_blosum_mismatch
     cdef vector[float] temp_results
     cdef vector[float] lcs_results
+    cdef int counter_ = counter
     
     
     
@@ -309,10 +310,10 @@ cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vect
     min_ratio_blosum_mismatch = lcs_results[0]
     min_ratio_gap_blosum_mismatch = lcs_results[1]
     #with gil:
-    #    print("-----------------")
-    #    print(ZNF1)
-    #    print(ZNF2)
-    #    print(lcs_results)
+        #print("-----------------")
+        #print(ZNF1)
+        #print(ZNF2)
+    #    print(f"{rank} - {min_ratio_blosum_mismatch}")
 
     if min_ratio_blosum_mismatch >= 6.0:
         lcs_results = calculate_lcs(ZNF1, ZNF2, blosum)
@@ -343,54 +344,16 @@ cdef void calculate_lcs_ratio(int rank, int i, int j, vector[string] &ZNF1, vect
         #with gil:
         #    print("-----------------")
         #    print(lcs_results)
+        #    print(f"Rank: {rank} - Counter: {counter_}")
 
         openmp.omp_set_lock(&mylock)
         with gil:
+            #print(f"Rank: {rank} - Counter: {counter_} - {temp_results}")
             file_path = f"output/output_{rank}.csv"
             with open(file_path, 'a', newline='') as f:
                 f.write(",".join([str(x) for x in temp_results]))
                 f.write("\n")
         openmp.omp_unset_lock(&mylock)
-
-"""
-from threading import Lock
-@cython.boundscheck(False)
-@cython.nonecheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
-def cluster_ZNFs(const vector[vector[string]] &ZNFs_list):
-   
-    cdef map[pair[char, char], float] blosum
-    cdef map[pair[char, char], float] identity
-    cdef map[pair[char, char], float] blosum_mismatch
-    cdef map[pair[char, char], float] identity_mismatch
-    
-    blosum = sanitize_matrix2(blosum62)
-    identity = sanitize_matrix2(ident)
-    blosum_mismatch = sanitize_matrix2(blosum62, equal=True)
-    identity_mismatch = sanitize_matrix2(ident, equal=True)
-    
-    cdef int i, j
-    cdef vector[string] ZNF1
-    cdef vector[string] ZNF2
-    cdef float ZNF1_len
-    cdef float ZNF2_len
-    cdef int ZNFs_length
-    cdef float lcs_len
-    cdef int index
-    cdef openmp.omp_lock_t mylock
-    openmp.omp_init_lock(&mylock)
-    ZNFs_length = ZNFs_list.size()
-    cdef vector[vector[float]] results
-    with nogil, parallel():
-        for i in prange(ZNFs_length, schedule="dynamic"):
-            ZNF1_len = ZNFs_list[i].size()
-            for j in xrange(i+1, ZNFs_length):
-                ZNF2_len = ZNFs_list[j].size()
-                calculate_lcs_ratio(i, j, ZNFs_list[i], ZNFs_list[j], ZNF1_len, ZNF2_len, results, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
-    openmp.omp_destroy_lock(&mylock)
-    return results
-"""
 
 cdef vector[string] convert_to_vector_string(list byte_strings):
     cdef vector[string] result
@@ -439,9 +402,11 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
     
     # Convert generator to a list of tuples for processing
     tuples_list = generator # list(generator)
+    
     tuples_length = len(tuples_list)
+    print("Length of generator: {tuples_length}")
     tuples_array = np.array(generator, dtype=np.int32)
-
+    print("Numpy array")
     cdef map[pair[char, char], float] blosum
     cdef map[pair[char, char], float] identity
     cdef map[pair[char, char], float] blosum_mismatch
@@ -467,8 +432,10 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
     cdef vector[vector[int]] indexesTuple
 
     dataMap = convert_to_cpp_vector(dataMapDict)
+    print("dataMap")
     indexesTuple = convert_list_of_tuples_to_cpp_vector(tuples_list)
-    openmp.omp_init_lock(&mylock)
+    print("indexesTuple")
+    #openmp.omp_init_lock(&mylock)
     print(f"Rank: {rank} - Number of num_tuples: {num_tuples}")
     with nogil, parallel():
         for index in prange(num_tuples, schedule="dynamic"):
@@ -480,6 +447,97 @@ def cluster_ZNFs_test(generator, dataMapDict, rank):
             ZNF2 = dataMap[j]
             ZNF1_len = ZNF1.size()
             ZNF2_len = ZNF2.size()
-            calculate_lcs_ratio(rank_, i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+            calculate_lcs_ratio(rank_, 0, i, j, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+    #openmp.omp_destroy_lock(&mylock)
+
+
+
+from threading import Lock
+@cython.boundscheck(False)
+@cython.nonecheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def cluster_ZNFs_parition(indexIn, totalSize, dataMapDict, rank):
+    cdef map[pair[char, char], float] blosum
+    cdef map[pair[char, char], float] identity
+    cdef map[pair[char, char], float] blosum_mismatch
+    cdef map[pair[char, char], float] identity_mismatch
+    
+    blosum = sanitize_matrix2(blosum62)
+    identity = sanitize_matrix2(ident)
+    blosum_mismatch = sanitize_matrix2(blosum62, equal=True)
+    identity_mismatch = sanitize_matrix2(ident, equal=True)
+    
+    cdef int indexOut
+    cdef int indexIn_ = indexIn
+    cdef int rank_ = rank
+    cdef vector[string] ZNF1
+    cdef vector[string] ZNF2
+    cdef float ZNF1_len
+    cdef float ZNF2_len
+    cdef int ZNFs_length
+    cdef float lcs_len
+    cdef int index
+    cdef openmp.omp_lock_t mylock
+    cdef int num_tuples = totalSize
+    cdef vector[vector[string]] dataMap = convert_to_cpp_vector(dataMapDict)
+
+    #print(f"Starting computations on rank: {rank} - numTuples: {num_tuples}")
+    openmp.omp_init_lock(&mylock)
+    with nogil, parallel():
+        for indexOut in prange(num_tuples, schedule="dynamic"):
+            ZNF1 = dataMap[indexIn_]
+            ZNF2 = dataMap[indexOut]
+            ZNF1_len = ZNF1.size()
+            ZNF2_len = ZNF2.size()
+            calculate_lcs_ratio(rank_, indexOut, indexIn_, indexOut, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+            #with gil: 
+            #     print(counter)
+                #print(f"Rank: {rank} - counter: {counter}")
     openmp.omp_destroy_lock(&mylock)
+
+
+from threading import Lock
+@cython.boundscheck(False)
+@cython.nonecheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def cluster_ZNFs_parition2(paritionStart, paratitionEnd, totalSize, dataMapDict, rank):
+    cdef map[pair[char, char], float] blosum
+    cdef map[pair[char, char], float] identity
+    cdef map[pair[char, char], float] blosum_mismatch
+    cdef map[pair[char, char], float] identity_mismatch
+    
+    blosum = sanitize_matrix2(blosum62)
+    identity = sanitize_matrix2(ident)
+    blosum_mismatch = sanitize_matrix2(blosum62, equal=True)
+    identity_mismatch = sanitize_matrix2(ident, equal=True)
+    
+    cdef int indexOut, indexIn
+    cdef int rank_ = rank
+    cdef vector[string] ZNF1
+    cdef vector[string] ZNF2
+    cdef float ZNF1_len
+    cdef float ZNF2_len
+    cdef int ZNFs_length
+    cdef float lcs_len
+    cdef int index
+    cdef openmp.omp_lock_t mylock
+    cdef int num_tuples = totalSize
+    cdef int paritionStart_ = paritionStart
+    cdef int paratitionEnd_ = paratitionEnd
+    cdef vector[vector[string]] dataMap = convert_to_cpp_vector(dataMapDict)
+
+    print(f"Starting computations on rank: {rank}")
+    print(f"Partition start: {paritionStart}, Partition End: {paratitionEnd}")
+
+    with nogil, parallel():
+        for indexOut in prange(num_tuples, schedule="dynamic"):
+            for indexIn in range(paritionStart_, paratitionEnd_):
+                ZNF1 = dataMap[indexIn]
+                ZNF2 = dataMap[indexOut]
+                ZNF1_len = ZNF1.size()
+                ZNF2_len = ZNF2.size()
+                calculate_lcs_ratio(rank_, 0, indexIn, indexOut, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+    #openmp.omp_destroy_lock(&mylock)
     
