@@ -10,6 +10,7 @@ from collections import defaultdict
 import json  # For saving the counter dictionary to a file easily
 import os
 import LCS_cython
+import time
 # Default variable initialization for MPI4PY
 # If you want to learn more, I recommend checking out:
 # https://www.kth.se/blogs/pdc/2019/08/parallel-programming-in-python-mpi4py-part-1/
@@ -214,8 +215,6 @@ def equally_spread_partitions(totalSize, n):
     partition_size = totalSize / n
     return [int(round(partition_size * i)) for i in range(n + 1)]
 
-
-    worker_process(paritions[rank-1], paritions[rank], rank, counter)
 # Worker process function
 def worker_process(partitionStart: int, partitionEnd: int, rank: int) -> None:
     
@@ -226,11 +225,16 @@ def worker_process(partitionStart: int, partitionEnd: int, rank: int) -> None:
     print(f"Datamap len: {dataMapLen}")
     progressFlags = getCombinationsSparseRanges(sizePartition, 10)
     #LCS_cython.cluster_ZNFs_test(list(islice(data, 0, 100000)), dataMapClean, rank)
-    i = 0 
+    i = 0
+    startTime = time.time()
     for indexIn in range(partitionStart, partitionEnd, 1):
         LCS_cython.cluster_ZNFs_parition(indexIn, dataMapLen, dataMapClean, rank)      
         if((progressFlags[i] + partitionStart)==indexIn):
-            print(f"rank: {rank} - parition completed ration: {i} out of 10")
+            elapsedTime = time.time() - startTime
+            startTime = time.time()
+            remainingTime = (10 - i) * elapsedTime
+            print(f'rank: {rank} - parition completed: {i} out of 10, in time: {time.strftime("%H:%M:%S", time.gmtime(elapsedTime))}, time remaining: {time.strftime("%H:%M:%S", time.gmtime(remainingTime))}')
+            
             i += 1
         
     # Send a sentinel value to indicate completion
