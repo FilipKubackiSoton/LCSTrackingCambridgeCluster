@@ -11,6 +11,7 @@ import json  # For saving the counter dictionary to a file easily
 import os
 import LCS_cython
 import time
+import math
 # Default variable initialization for MPI4PY
 # If you want to learn more, I recommend checking out:
 # https://www.kth.se/blogs/pdc/2019/08/parallel-programming-in-python-mpi4py-part-1/
@@ -152,12 +153,14 @@ class IncrementalMeanStdWelford:
     def __str__(self):
         return str(self.n) + "," + str("{:.2f}".format(self.get_current_mean())) + "," + str("{:.2f}".format(self.get_current_s())) + "\n"
 
-def save_to_file(data, filename):
-    """Save the given data to a file in JSON format."""
-    with open(filename, 'w') as f:
-        json.dump(data, f)
+
 
 def coordinator_process():
+    def save_to_file(data, filename):
+        """Save the given data to a file in JSON format."""
+        with open(filename, 'w') as f:
+            json.dump(data, f)
+
     completed_workers = 0
 
     while completed_workers < nprocs - 1:
@@ -201,34 +204,34 @@ def process_and_encode_string(input_string):
                             .replace("-XXX", "").split("-")
     return [s.encode('utf-8') for s in transformed]
 
-def equally_spread_partitions(totalSize, n):
-    """
-    Create an array of n+1 numbers from 0 to totalSize that are equally spread as possible.
-
-    Parameters:
-    - totalSize: The total size or the upper boundary of the range to partition.
-    - n: The number of partitions.
-
-    Returns:
-    - A list of partition boundaries, including 0 and totalSize.
-    """
-    partition_size = totalSize / n
-    return [int(round(partition_size * i)) for i in range(n + 1)]
+def GetPartitionIndexes(sampleSize: int, partitionNum: int) -> [int]:
+    
+    res = [0]
+    x = 0
+    a = sampleSize*sampleSize/2/partitionNum
+    for _ in range(partitionNum-1):
+        res.append(sampleSize - math.sqrt((sampleSize - x)**2 - 2*a))
+        x = res[-1]
+    return [int(z) for z in res] + [sampleSize]
 
 # Worker process function
 def worker_process(partitionStart: int, partitionEnd: int, rank: int) -> None:
+    def getCombinationsSparseRanges(n: int, p: int):
+        chunksize = n//p
+        res = [chunksize*i for i in range(p)]
+        res.append(n)
+        return res
     
     dataMap = loadIndexDataMap()
-    dataMapLen = len(dataMap.keys())
     dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
+    dataMapLen = len(dataMap.keys())
+
     sizePartition = partitionEnd - partitionStart
-    print(f"Datamap len: {dataMapLen}")
     progressFlags = getCombinationsSparseRanges(sizePartition, 10)
-    #LCS_cython.cluster_ZNFs_test(list(islice(data, 0, 100000)), dataMapClean, rank)
     i = 0
     startTime = time.time()
     for indexIn in range(partitionStart, partitionEnd, 1):
-        LCS_cython.cluster_ZNFs_parition(indexIn, dataMapLen, dataMapClean, rank)      
+        LCS_cython.cluster_ZNFs_parition2(indexIn, dataMapLen, dataMapClean, rank)      
         if((progressFlags[i] + partitionStart)==indexIn):
             elapsedTime = time.time() - startTime
             startTime = time.time()
@@ -240,65 +243,7 @@ def worker_process(partitionStart: int, partitionEnd: int, rank: int) -> None:
     # Send a sentinel value to indicate completion
     comm.send(None, dest=0, tag=1)
 
-
 # Worker process function
-    """
-def worker_process(data, rank: int, processed_samples_num: int) -> None:
-    print("start process")
-    dataMap = loadIndexDataMap()
-    print("datamap")
-    dataMapLen = len(dataMap.keys())
-    print(f"dataMap length: {dataMapLen}")
-    totalSize = dataMapLen*(dataMapLen-1)/ 2 / 3
-    dataMapClean = {k: process_and_encode_string(v) for k, v in dataMap.items()}
-    print("dataMapClean")
-    #datagen = islice(data, processed_samples_num, None)
-    n_partitions = 1000000
-    partitions = equally_spread_partitions(totalSize, n_partitions)
-    print(rank)
-    #print(partitions)
-    try: 
-
-        LCS_cython.cluster_ZNFs_test(list(islice(data, 0, 100000)), dataMapClean, rank)
-        
-        # for i in range(n_partitions):
-        #     #print(str(partitions[i]) +"-"+ str(partitions[i+1]))
-        #     LCS_cython.cluster_ZNFs_test(list(islice(data, partitions[i], partitions[i+1])), dataMapClean, rank)
-
-        # file_path = f"output/output_{rank}.csv"
-        # # Writing to the CSV file
-        # with open(file_path, 'a', newline='') as csvfile:
-        #     writer = csv.writer(csvfile)
-            
-        #     # Writing each list (row) into the CSV file
-        #     for row in results:     
-        #         # score_str = ','.join([f"{round(s, 2):.2f}" for s in row])
-        #         writer.writerow(row)
-        # for ix, iy in islice(data, processed_samples_num, None)  :
-        #     progress_counter += 1
-        #     progress_path = f"output/progress_{rank}.txt"
-        #     with open(progress_path, "w") as p:
-        #         p.write(str(progress_counter))
-        #     seq1 = dataMap[ix]
-        #     seq2 = dataMap[iy]
-        #     score = LCS_cython.cluster_ZNFs(process_and_encode_string(seq1), process_and_encode_string(seq2))
-        #     comm.send((ix, score), dest=0, tag=0)  # Sending to rank 0
-        #     comm.send((iy, score), dest=0, tag=0)  # Sending to rank 0
-        #     if score:
-        #         print(score)
-        #         with open(f"output/output_{rank}.csv", "a") as f:
-        #             score_str = ','.join([f"{round(s, 2):.2f}" for s in score[0]])
-        #             f.write(f"{ix},{iy},{score_str}\n")
-    
-    except Exception as e:
-        print(f"Error writing to file: {e}")             
-
-    # Send a sentinel value to indicate completion
-    comm.send(None, dest=0, tag=1)
-
-
-        """
-
 # Example of print that will be saved in log files.
 print(f"rank: {rank}, numprocess: {nprocs}")
 
@@ -311,16 +256,10 @@ def load_from_file(filename):
         data = json.load(f)
     return data
 
-def getCombinationsSparseRanges(n: int, p: int):
-    chunksize = n//p
-    res = [chunksize*i for i in range(p)]
-    res.append(n)
-    return res
-
 counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(lambda : 0)
-
-paritions = getCombinationsSparseRanges(len(loadIndexDataMap().keys()),  nprocs-1)
+paritions = GetPartitionIndexes(len(loadIndexDataMap().keys()),  nprocs-1)
 print(paritions)
+
 if rank == 0:
     for i in range(1, nprocs):
         file_path = f"output/output_{i}.csv"
@@ -328,7 +267,7 @@ if rank == 0:
             print(f"Creating output dir: {i}")
             with open(file_path, "w") as f:
                 f.write("SourceIndex,OutputIndex,1,2,3,4,5,6,7,8\n")
-        comm.send(data_slices[i-1], dest=i)
+        #comm.send(data_slices[i-1], dest=i)
     coordinator_process()
 else:
     counter = 0
@@ -343,10 +282,10 @@ else:
         counter = 0  # Or another appropriate default value
 
     print(f"Worker: {rank} - counter: {counter}")
-    data = comm.recv(source=0)
+    #data = comm.recv(source=0)
+    #worker_process(rank,dataMapClean, dataMapLen, paritions[rank-1], paritions[rank])
     worker_process(paritions[rank-1], paritions[rank], rank)
 
-    # worker_process(data, rank, counter)
 
 # data = comm.scatter(data_slices, root=0)
     

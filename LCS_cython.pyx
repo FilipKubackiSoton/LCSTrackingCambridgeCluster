@@ -468,7 +468,7 @@ def cluster_ZNFs_parition(indexIn, totalSize, dataMapDict, rank):
     blosum_mismatch = sanitize_matrix2(blosum62, equal=True)
     identity_mismatch = sanitize_matrix2(ident, equal=True)
     
-    cdef int indexOut
+    cdef int indexOut_
     cdef int indexIn_ = indexIn
     cdef int rank_ = rank
     cdef vector[string] ZNF1
@@ -479,21 +479,18 @@ def cluster_ZNFs_parition(indexIn, totalSize, dataMapDict, rank):
     cdef float lcs_len
     cdef int index
     cdef openmp.omp_lock_t mylock
-    cdef int num_tuples = totalSize
+    cdef int num_tuples = totalSize-indexIn_
     cdef vector[vector[string]] dataMap = convert_to_cpp_vector(dataMapDict)
 
     #print(f"Starting computations on rank: {rank} - numTuples: {num_tuples}")
     openmp.omp_init_lock(&mylock)
     with nogil, parallel():
-        for indexOut in prange(num_tuples, schedule="dynamic"):
+        for indexOut_ in prange(num_tuples, schedule="dynamic"):
             ZNF1 = dataMap[indexIn_]
-            ZNF2 = dataMap[indexOut]
+            ZNF2 = dataMap[indexOut_]
             ZNF1_len = ZNF1.size()
             ZNF2_len = ZNF2.size()
-            calculate_lcs_ratio(rank_, indexOut, indexIn_, indexOut, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
-            #with gil: 
-            #     print(counter)
-                #print(f"Rank: {rank} - counter: {counter}")
+            calculate_lcs_ratio(rank_, indexOut_, indexIn_, indexOut_, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
     openmp.omp_destroy_lock(&mylock)
 
 
@@ -502,7 +499,7 @@ from threading import Lock
 @cython.nonecheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def cluster_ZNFs_parition2(paritionStart, paratitionEnd, totalSize, dataMapDict, rank):
+def cluster_ZNFs_parition2(indexIn, totalSize, dataMapDict, rank):
     cdef map[pair[char, char], float] blosum
     cdef map[pair[char, char], float] identity
     cdef map[pair[char, char], float] blosum_mismatch
@@ -513,7 +510,8 @@ def cluster_ZNFs_parition2(paritionStart, paratitionEnd, totalSize, dataMapDict,
     blosum_mismatch = sanitize_matrix2(blosum62, equal=True)
     identity_mismatch = sanitize_matrix2(ident, equal=True)
     
-    cdef int indexOut, indexIn
+    cdef int indexOut_
+    cdef int indexIn_ = indexIn
     cdef int rank_ = rank
     cdef vector[string] ZNF1
     cdef vector[string] ZNF2
@@ -523,21 +521,16 @@ def cluster_ZNFs_parition2(paritionStart, paratitionEnd, totalSize, dataMapDict,
     cdef float lcs_len
     cdef int index
     cdef openmp.omp_lock_t mylock
-    cdef int num_tuples = totalSize
-    cdef int paritionStart_ = paritionStart
-    cdef int paratitionEnd_ = paratitionEnd
+    cdef int num_tuples = totalSize-indexIn_
     cdef vector[vector[string]] dataMap = convert_to_cpp_vector(dataMapDict)
 
-    print(f"Starting computations on rank: {rank}")
-    print(f"Partition start: {paritionStart}, Partition End: {paratitionEnd}")
-
+    #print(f"Starting computations on rank: {rank} - numTuples: {num_tuples}")
+    openmp.omp_init_lock(&mylock)
     with nogil, parallel():
-        for indexOut in prange(num_tuples, schedule="dynamic"):
-            for indexIn in range(paritionStart_, paratitionEnd_):
-                ZNF1 = dataMap[indexIn]
-                ZNF2 = dataMap[indexOut]
-                ZNF1_len = ZNF1.size()
-                ZNF2_len = ZNF2.size()
-                calculate_lcs_ratio(rank_, 0, indexIn, indexOut, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
-    #openmp.omp_destroy_lock(&mylock)
-    
+        for indexOut_ in prange(num_tuples-indexIn_, schedule="dynamic"):
+            ZNF1 = dataMap[indexIn_]
+            ZNF2 = dataMap[indexOut_]
+            ZNF1_len = ZNF1.size()
+            ZNF2_len = ZNF2.size()
+            calculate_lcs_ratio(rank_, indexOut_, indexIn_, indexOut_, ZNF1, ZNF2, ZNF1_len, ZNF2_len, blosum, identity, blosum_mismatch, identity_mismatch, mylock)
+    openmp.omp_destroy_lock(&mylock)
