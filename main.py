@@ -258,9 +258,14 @@ def load_from_file(filename):
 
 counter = load_from_file(workers_update_filename) if os.path.exists(workers_update_filename) else defaultdict(lambda : 0)
 paritions = GetPartitionIndexes(len(loadIndexDataMap().keys()),  nprocs-1)
-print(paritions)
 
 if rank == 0:
+    print("---------------------------------------------------")
+    print("PARTITIONS")
+    print("---------------------------------------------------")
+    print(paritions)
+    print("---------------------------------------------------")
+
     for i in range(1, nprocs):
         file_path = f"output/output_{i}.csv"
         if(not os.path.exists(file_path)):
