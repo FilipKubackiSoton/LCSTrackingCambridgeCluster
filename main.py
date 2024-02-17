@@ -177,14 +177,6 @@ def worker_process(dataSlice: islice, rank: int) -> None:
         for x in score: 
             if x > 6.0:
                 print(f"rank: {rank}, score: {x}")
-
-    # size = 0 
-    # for ix, iy in dataSlice:
-    #     score = LCS_cython.cluster_ZNF(dataMap[ix], dataMap[iy]) 
-    #     if score > 6.0: 
-    #         print(f"IndexIN: {ix}, IndexOUT: {iy}, Score: {score}")
-    #     size += 1
-    #print(f"Worker at rank {rank} received the count of indexes: {size}")
     comm.send(None, dest=0, tag=1)
 
 if __name__ == "__main__":

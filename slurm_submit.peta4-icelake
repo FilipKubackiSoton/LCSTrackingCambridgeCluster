@@ -82,6 +82,7 @@ np=$[${numnodes}*${mpi_tasks_per_node}]
 #! this should be suitable for both pure MPI and hybrid MPI/OpenMP jobs:
 export I_MPI_PIN_DOMAIN=omp:compact # Domains are $OMP_NUM_THREADS cores in size
 export I_MPI_PIN_ORDER=scatter # Adjacent domains have minimal sharing of caches/sockets
+export I_MPI_SPAWN=on
 #! Notes:
 #! 1. These variables influence Intel MPI only.
 #! 2. Domains are non-overlapping sets of cores which map 1-1 to MPI tasks.
@@ -92,8 +93,8 @@ export I_MPI_PIN_ORDER=scatter # Adjacent domains have minimal sharing of caches
 #! Uncomment one choice for CMD below (add mpirun/mpiexec options if necessary):
 
 #! Choose this for a MPI code (possibly using OpenMP) using Intel MPI.
-#CMD="mpirun -ppn $mpi_tasks_per_node -np $np --bind-to none $application $options"
-CMD="mpiexec -n $np $application $options"
+CMD="mpirun -ppn $mpi_tasks_per_node -np $np $application $options"
+#CMD="mpirun -n $np $application $options"
 
 # CMD="mpirun -np $np $application $options"
 # CMD="srun -n $np $application $options"
